@@ -187,7 +187,7 @@ export function formatSignal(signal: TradingSignal): string {
       return (
         `🟢 *BUY SIGNAL — ${esc(signal.symbol)}*\n` +
         `📊 MACD Bullish Crossover \\(histogram turned positive\\)\n` +
-        `💰 Price: *\\$${signal.price.toFixed(2)}*\n` +
+        `💰 Price: *\\$${esc(signal.price.toFixed(2))}*\n` +
         `📈 MACD: \`${signal.macd!.macdLine.toFixed(4)}\`  ` +
         `Signal: \`${signal.macd!.signalLine.toFixed(4)}\`  ` +
         `Hist: \`\\+${signal.macd!.histogram.toFixed(4)}\`\n` +
@@ -198,7 +198,7 @@ export function formatSignal(signal: TradingSignal): string {
       return (
         `🔴 *SELL SIGNAL — ${esc(signal.symbol)}*\n` +
         `📊 MACD Bearish Crossover \\(histogram turned negative\\)\n` +
-        `💰 Price: *\\$${signal.price.toFixed(2)}*\n` +
+        `💰 Price: *\\$${esc(signal.price.toFixed(2))}*\n` +
         `📉 MACD: \`${signal.macd!.macdLine.toFixed(4)}\`  ` +
         `Signal: \`${signal.macd!.signalLine.toFixed(4)}\`  ` +
         `Hist: \`${signal.macd!.histogram.toFixed(4)}\`\n` +
@@ -207,7 +207,7 @@ export function formatSignal(signal: TradingSignal): string {
 
     case 'EMA200_PROXIMITY': {
       const e = signal.ema200!;
-      const absPct = Math.abs(e.percentDiff).toFixed(2);
+      const absPct = esc(Math.abs(e.percentDiff).toFixed(2));
       const dirEmoji = e.direction === 'ABOVE' ? '📍' : '🔻';
       const label = e.direction === 'ABOVE'
         ? '\\(potential resistance\\)'
@@ -215,7 +215,7 @@ export function formatSignal(signal: TradingSignal): string {
       return (
         `⚡ *EMA200 PROXIMITY — ${esc(signal.symbol)}*\n` +
         `📊 Price within ${absPct}% of the 200\\-day EMA\n` +
-        `💰 Price: *\\$${signal.price.toFixed(2)}*  EMA200: \`\\$${e.value.toFixed(2)}\`\n` +
+        `💰 Price: *\\$${esc(signal.price.toFixed(2))}*  EMA200: \`\\$${e.value.toFixed(2)}\`\n` +
         `${dirEmoji} ${absPct}% ${e.direction} EMA200 ${label}\n` +
         `⏰ ${esc(ts)}`
       );
@@ -223,7 +223,7 @@ export function formatSignal(signal: TradingSignal): string {
 
     case 'VIX_SPIKE': {
       const v = signal.vix!;
-      const absPct = Math.abs(v.changePercent).toFixed(2);
+      const absPct = esc(Math.abs(v.changePercent).toFixed(2));
       const dirEmoji = v.changePercent > 0 ? '📈' : '📉';
       const dirWord = v.changePercent > 0 ? 'SPIKED UP' : 'DROPPED';
       const sign = v.changePercent > 0 ? '\\+' : '';
@@ -268,7 +268,7 @@ export function formatAnalysisReport(analysis: AnalysisResult): string {
 
   return (
     `*${esc(analysis.symbol)} — Snapshot*\n` +
-    `💰 Price: *\\$${analysis.price.toFixed(2)}*\n` +
+    `💰 Price: *\\$${esc(analysis.price.toFixed(2))}*\n` +
     `⏰ ${esc(analysis.timestamp.toUTCString())}\n\n` +
     `${macdStr}\n\n` +
     `${ema200Str}`
