@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { Telegram } from 'telegraf';
-import { getSymbolSubscribers } from './state.js';
-import { analyzeSymbol, detectSignals, formatSignal } from './signals.js';
+import { getSymbolSubscribers, getVixSubscribers } from './state.js';
+import { analyzeSymbol, checkVixAlert, detectSignals, formatSignal } from './signals.js';
 
 let telegram: Telegram;
 
@@ -42,6 +42,27 @@ export async function runScan(): Promise<void> {
 
     // Small delay between symbols to avoid Yahoo Finance rate limits
     await sleep(1500);
+  }
+
+  // --- VIX alert ---
+  await runVixCheck();
+}
+
+async function runVixCheck(): Promise<void> {
+  const subscribers = getVixSubscribers();
+  if (subscribers.length === 0) return;
+
+  const signal = await checkVixAlert();
+  if (!signal) return;
+
+  const msg = formatSignal(signal);
+  for (const chatId of subscribers) {
+    try {
+      await telegram.sendMessage(chatId, msg, { parse_mode: 'MarkdownV2' });
+      console.log(`[scanner] Sent VIX_SPIKE alert → chat ${chatId}`);
+    } catch (err) {
+      console.error(`[scanner] Failed to send VIX alert to chat ${chatId}:`, err);
+    }
   }
 }
 

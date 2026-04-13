@@ -14,9 +14,15 @@ export interface SymbolSignalState {
 // symbol -> signal tracking state
 export type SignalState = Record<string, SymbolSignalState>;
 
+export interface VixState {
+  lastAlertPrice: number | null;  // VIX price at the time of the last alert (or first-seen)
+}
+
 export interface AppState {
   watchlist: Watchlist;
   signalState: SignalState;
+  vixState: VixState;
+  vixSubscribers: string[];  // chat IDs that receive VIX alerts
 }
 
 // --- Analysis ---
@@ -37,7 +43,7 @@ export interface AnalysisResult {
 
 // --- Signals ---
 
-export type SignalType = 'MACD_BUY' | 'MACD_SELL' | 'EMA200_PROXIMITY';
+export type SignalType = 'MACD_BUY' | 'MACD_SELL' | 'EMA200_PROXIMITY' | 'VIX_SPIKE';
 
 export interface TradingSignal {
   type: SignalType;
@@ -49,5 +55,9 @@ export interface TradingSignal {
     value: number;
     percentDiff: number;     // positive = above EMA200, negative = below
     direction: 'ABOVE' | 'BELOW';
+  };
+  vix?: {
+    previousPrice: number;
+    changePercent: number;   // positive = up, negative = down
   };
 }

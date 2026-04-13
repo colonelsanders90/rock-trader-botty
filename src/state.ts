@@ -3,20 +3,28 @@ import path from 'path';
 import {
   AppState,
   SymbolSignalState,
+  VixState,
   WatchedSymbol,
-  Watchlist,
 } from './types.js';
 
 const STATE_FILE = path.resolve(process.cwd(), 'state.json');
 
+const DEFAULT_STATE: AppState = {
+  watchlist: {},
+  signalState: {},
+  vixState: { lastAlertPrice: null },
+  vixSubscribers: [],
+};
+
 function loadState(): AppState {
   if (!existsSync(STATE_FILE)) {
-    return { watchlist: {}, signalState: {} };
+    return { ...DEFAULT_STATE };
   }
   try {
-    return JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as AppState;
+    const parsed = JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as Partial<AppState>;
+    return { ...DEFAULT_STATE, ...parsed };
   } catch {
-    return { watchlist: {}, signalState: {} };
+    return { ...DEFAULT_STATE };
   }
 }
 
@@ -88,4 +96,30 @@ export function updateSignalState(
     ...updates,
   };
   saveState(state);
+}
+
+// --- VIX state ---
+
+export function getVixState(): VixState {
+  return loadState().vixState;
+}
+
+export function updateVixState(updates: Partial<VixState>): void {
+  const state = loadState();
+  state.vixState = { ...state.vixState, ...updates };
+  saveState(state);
+}
+
+// --- VIX subscribers ---
+
+export function addVixSubscriber(chatId: string): void {
+  const state = loadState();
+  if (!state.vixSubscribers.includes(chatId)) {
+    state.vixSubscribers.push(chatId);
+    saveState(state);
+  }
+}
+
+export function getVixSubscribers(): string[] {
+  return loadState().vixSubscribers;
 }

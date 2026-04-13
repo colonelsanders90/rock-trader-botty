@@ -1,10 +1,13 @@
 import { EMA, MACD } from 'technicalindicators';
 import { AnalysisResult, TradingSignal } from './types.js';
-import { getSignalState, updateSignalState } from './state.js';
+import { getSignalState, getVixState, updateSignalState, updateVixState } from './state.js';
 import { fetchDailyBars } from './yahoo.js';
 
 // ~500 calendar days → 250+ trading days (needed for EMA200)
 const LOOKBACK_DAYS = 500;
+
+const VIX_THRESHOLD =
+  parseFloat(process.env.VIX_CHANGE_THRESHOLD_PERCENT ?? '5') / 100;
 
 const EMA200_THRESHOLD =
   parseFloat(process.env.EMA200_THRESHOLD_PERCENT ?? '2') / 100;
@@ -132,6 +135,48 @@ export function detectSignals(analysis: AnalysisResult): TradingSignal[] {
 }
 
 // ---------------------------------------------------------------------------
+// Check if VIX has moved ≥ threshold % since the last alert
+// ---------------------------------------------------------------------------
+export async function checkVixAlert(): Promise<TradingSignal | null> {
+  try {
+    const bars = await fetchDailyBars('^VIX', 5);
+    if (bars.length === 0) return null;
+
+    const latest = bars[bars.length - 1];
+    const vixState = getVixState();
+
+    if (vixState.lastAlertPrice === null) {
+      // First run — seed the price, no alert yet
+      updateVixState({ lastAlertPrice: latest.close });
+      return null;
+    }
+
+    const changePercent =
+      (latest.close - vixState.lastAlertPrice) / vixState.lastAlertPrice;
+
+    if (Math.abs(changePercent) >= VIX_THRESHOLD) {
+      const previousPrice = vixState.lastAlertPrice;
+      updateVixState({ lastAlertPrice: latest.close });
+      return {
+        type: 'VIX_SPIKE',
+        symbol: '^VIX',
+        price: latest.close,
+        timestamp: latest.date,
+        vix: {
+          previousPrice,
+          changePercent: changePercent * 100,
+        },
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.error('[signals] Error checking VIX:', err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Format a signal as a MarkdownV2 Telegram message
 // ---------------------------------------------------------------------------
 export function formatSignal(signal: TradingSignal): string {
@@ -172,6 +217,21 @@ export function formatSignal(signal: TradingSignal): string {
         `📊 Price within ${absPct}% of the 200\\-day EMA\n` +
         `💰 Price: *\\$${signal.price.toFixed(2)}*  EMA200: \`\\$${e.value.toFixed(2)}\`\n` +
         `${dirEmoji} ${absPct}% ${e.direction} EMA200 ${label}\n` +
+        `⏰ ${esc(ts)}`
+      );
+    }
+
+    case 'VIX_SPIKE': {
+      const v = signal.vix!;
+      const absPct = Math.abs(v.changePercent).toFixed(2);
+      const dirEmoji = v.changePercent > 0 ? '📈' : '📉';
+      const dirWord = v.changePercent > 0 ? 'SPIKED UP' : 'DROPPED';
+      const sign = v.changePercent > 0 ? '\\+' : '';
+      return (
+        `⚠️ *VIX ${dirWord} ${absPct}%*\n` +
+        `Fear index moved significantly\\!\n` +
+        `📊 VIX now: *${esc(signal.price.toFixed(2))}*  was: \`${esc(v.previousPrice.toFixed(2))}\`\n` +
+        `${dirEmoji} Change: ${sign}${esc(v.changePercent.toFixed(2))}%\n` +
         `⏰ ${esc(ts)}`
       );
     }

@@ -1,6 +1,6 @@
 import { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
-import { addToWatchlist, getWatchlist, removeFromWatchlist } from './state.js';
+import { addToWatchlist, addVixSubscriber, getWatchlist, removeFromWatchlist } from './state.js';
 import {
   analyzeSymbol,
   detectSignals,
@@ -16,12 +16,14 @@ export function createBot(token: string): Telegraf {
 
   // ---- /start ----
   bot.command('start', async (ctx) => {
+    addVixSubscriber(String(ctx.chat.id));
     await ctx.replyWithMarkdownV2(
       `👋 *Welcome to Rock Trader Botty\\!*\n\n` +
       `I watch your stocks and fire alerts when:\n` +
       `• 🟢 MACD histogram crosses *above zero* → BUY\n` +
       `• 🔴 MACD histogram crosses *below zero* → SELL\n` +
-      `• ⚡ Price lands within *${THRESHOLD}%* of the 200\\-day EMA\n\n` +
+      `• ⚡ Price lands within *${THRESHOLD}%* of the 200\\-day EMA\n` +
+      `• ⚠️ VIX moves *5%* or more \\(automatic, no setup needed\\)\n\n` +
       `*Commands*\n` +
       `/watch \\<symbol\\> — add to watchlist\n` +
       `/unwatch \\<symbol\\> — remove from watchlist\n` +
@@ -47,6 +49,7 @@ export function createBot(token: string): Telegraf {
       `*Signal settings*\n` +
       `• MACD: \\(12, 26, 9\\) on daily candles\n` +
       `• EMA200 alert zone: within ${THRESHOLD}% of EMA200\n` +
+      `• VIX: alert when fear index moves ≥5% from last alert\n` +
       `• Scan interval: every ${INTERVAL} minutes`
     );
   });
