@@ -11,6 +11,7 @@ import { fetchDailyBars } from './yahoo.js';
 
 const INTERVAL = process.env.SCAN_INTERVAL_MINUTES ?? '15';
 const THRESHOLD = process.env.EMA200_THRESHOLD_PERCENT ?? '2';
+const VIX_THRESHOLD = process.env.VIX_CHANGE_THRESHOLD_PERCENT ?? '5';
 
 export function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -24,7 +25,7 @@ export function createBot(token: string): Telegraf {
       `• 🟢 MACD histogram crosses *above zero* → BUY\n` +
       `• 🔴 MACD histogram crosses *below zero* → SELL\n` +
       `• ⚡ Price lands within *${THRESHOLD}%* of the 200\\-day EMA\n` +
-      `• ⚠️ VIX moves *5%* or more \\(automatic, no setup needed\\)\n\n` +
+      `• ⚠️ VIX moves *${VIX_THRESHOLD}%* or more \\(automatic, no setup needed\\)\n\n` +
       `*Commands*\n` +
       `/watch \\<symbol\\> — add to watchlist\n` +
       `/unwatch \\<symbol\\> — remove from watchlist\n` +
@@ -52,7 +53,7 @@ export function createBot(token: string): Telegraf {
       `*Signal settings*\n` +
       `• MACD: \\(12, 26, 9\\) on daily candles\n` +
       `• EMA200 alert zone: within ${THRESHOLD}% of EMA200\n` +
-      `• VIX: alert when fear index moves ≥5% from last alert\n` +
+      `• VIX: alert when fear index moves ≥${VIX_THRESHOLD}% from last alert\n` +
       `• Scan interval: every ${INTERVAL} minutes`
     );
   });
