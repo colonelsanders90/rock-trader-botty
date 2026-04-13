@@ -1,0 +1,25 @@
+{
+  "name": "rock-trader-botty",
+  "version": "1.0.0",
+  "description": "Telegram bot for MACD crossover and EMA200 proximity alerts via TradingView data",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3",
+    "technicalindicators": "^3.1.0",
+    "telegraf": "^4.16.3",
+    "yahoo-finance2": "^2.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
