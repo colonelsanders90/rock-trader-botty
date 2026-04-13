@@ -7,6 +7,7 @@ import {
   formatAnalysisReport,
   formatSignal,
 } from './signals.js';
+import { fetchDailyBars } from './yahoo.js';
 
 const INTERVAL = process.env.SCAN_INTERVAL_MINUTES ?? '15';
 const THRESHOLD = process.env.EMA200_THRESHOLD_PERCENT ?? '2';
@@ -28,6 +29,7 @@ export function createBot(token: string): Telegraf {
       `/watch \\<symbol\\> — add to watchlist\n` +
       `/unwatch \\<symbol\\> — remove from watchlist\n` +
       `/list — show your watchlist\n` +
+      `/price \\<symbol\\> — current price \\+ day change\n` +
       `/check \\<symbol\\> — instant MACD \\+ EMA200 snapshot\n` +
       `/help — show this message`
     );
@@ -45,6 +47,7 @@ export function createBot(token: string): Telegraf {
       `*Managing your list*\n` +
       `\`/unwatch AAPL\` — stop watching Apple\n` +
       `\`/list\` — see everything you watch\n` +
+      `\`/price AAPL\` — current price \\+ day change\n` +
       `\`/check AAPL\` — on\\-demand analysis\n\n` +
       `*Signal settings*\n` +
       `• MACD: \\(12, 26, 9\\) on daily candles\n` +
@@ -106,6 +109,48 @@ export function createBot(token: string): Telegraf {
       .join('\n');
 
     await ctx.replyWithMarkdownV2(`*Your Watchlist \\(${watchlist.length}\\)*\n${escapeMarkdown(lines)}`);
+  });
+
+  // ---- /price <symbol> ----
+  bot.command('price', async (ctx) => {
+    const parts = ctx.message.text.trim().split(/\s+/);
+    if (parts.length < 2) {
+      return ctx.reply('Usage: /price <symbol>\nExample: /price AAPL');
+    }
+    const symbol = parts[1].toUpperCase();
+
+    const loadingMsg = await ctx.reply(`🔍 Fetching price for ${symbol}…`);
+
+    try {
+      const bars = await fetchDailyBars(symbol, 5);
+      if (bars.length === 0) throw new Error('No data');
+
+      const latest = bars[bars.length - 1];
+      const prev = bars.length >= 2 ? bars[bars.length - 2] : null;
+      const change = prev ? latest.close - prev.close : null;
+      const changePct = prev ? (change! / prev.close) * 100 : null;
+      const arrow = change == null ? '' : change >= 0 ? '▲' : '▼';
+      const changeStr =
+        change != null
+          ? ` ${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} \\(${changePct! >= 0 ? '+' : ''}${changePct!.toFixed(2)}%\\)`
+          : '';
+
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        loadingMsg.message_id,
+        undefined,
+        `💰 *${escapeMarkdown(symbol)}* — \\$${latest.close.toFixed(2)}${changeStr}\n` +
+        `⏰ ${escapeMarkdown(latest.date.toUTCString())}`,
+        { parse_mode: 'MarkdownV2' }
+      );
+    } catch {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        loadingMsg.message_id,
+        undefined,
+        `❌ Could not fetch price for ${symbol}.\nCheck the symbol is valid on Yahoo Finance and try again.`
+      );
+    }
   });
 
   // ---- /check <symbol> ----

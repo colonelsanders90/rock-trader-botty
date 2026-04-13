@@ -61,6 +61,7 @@ npm start
 | `/watch <SYMBOL>` | Add a symbol to your watchlist (e.g. `/watch AAPL`) |
 | `/unwatch <SYMBOL>` | Remove a symbol from your watchlist |
 | `/list` | Show all watched symbols |
+| `/price <SYMBOL>` | Show current price and day change (e.g. `/price AAPL`) |
 | `/check <SYMBOL>` | Run an immediate signal check on a symbol |
 
 ## Project Structure
