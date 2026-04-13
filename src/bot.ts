@@ -133,16 +133,15 @@ export function createBot(token: string): Telegraf {
       const arrow = change == null ? '' : change >= 0 ? '▲' : '▼';
       const changeStr =
         change != null
-          ? ` ${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} \\(${changePct! >= 0 ? '+' : ''}${changePct!.toFixed(2)}%\\)`
+          ? ` ${arrow} ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePct! >= 0 ? '+' : ''}${changePct!.toFixed(2)}%)`
           : '';
 
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         loadingMsg.message_id,
         undefined,
-        `💰 *${escapeMarkdown(symbol)}* — \\$${latest.close.toFixed(2)}${changeStr}\n` +
-        `⏰ ${escapeMarkdown(latest.date.toUTCString())}`,
-        { parse_mode: 'MarkdownV2' }
+        `💰 ${symbol} — $${latest.close.toFixed(2)}${changeStr}\n` +
+        `⏰ ${latest.date.toUTCString()}`
       );
     } catch {
       await ctx.telegram.editMessageText(
@@ -150,7 +149,7 @@ export function createBot(token: string): Telegraf {
         loadingMsg.message_id,
         undefined,
         `❌ Could not fetch price for ${symbol}.\nCheck the symbol is valid on Yahoo Finance and try again.`
-      );
+      ).catch(() => ctx.reply(`❌ Could not fetch price for ${symbol}.`));
     }
   });
 
@@ -164,39 +163,51 @@ export function createBot(token: string): Telegraf {
 
     const loadingMsg = await ctx.reply(`🔍 Fetching data for ${symbol}…`);
 
-    const analysis = await analyzeSymbol(symbol);
+    try {
+      const analysis = await analyzeSymbol(symbol);
 
-    if (!analysis) {
+      if (!analysis) {
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          loadingMsg.message_id,
+          undefined,
+          `❌ Could not fetch data for ${symbol}.\nCheck the symbol is valid on Yahoo Finance and try again.`
+        );
+        return;
+      }
+
+      const report = formatAnalysisReport(analysis);
+      const signals = detectSignals_readonly(analysis);
+      const signalText =
+        signals.length > 0
+          ? '\n\n' + signals.map(formatSignal).join('\n\n')
+          : '\n\n_No active signals right now\\._';
+
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         loadingMsg.message_id,
         undefined,
-        `❌ Could not fetch data for ${symbol}.\nCheck the symbol is valid on Yahoo Finance and try again.`
+        report + signalText,
+        { parse_mode: 'MarkdownV2' }
       );
-      return;
+    } catch (err) {
+      console.error(`[bot] /check error for ${symbol}:`, err);
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        loadingMsg.message_id,
+        undefined,
+        `❌ Something went wrong fetching data for ${symbol}. Please try again.`
+      ).catch(() => ctx.reply(`❌ Something went wrong fetching data for ${symbol}.`));
     }
-
-    // Build the report
-    const report = formatAnalysisReport(analysis);
-
-    // Detect any live signals (purely informational — does NOT update state)
-    const signals = detectSignals_readonly(analysis);
-    const signalText =
-      signals.length > 0
-        ? '\n\n' + signals.map(formatSignal).join('\n\n')
-        : '\n\n_No active signals right now\\._';
-
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      loadingMsg.message_id,
-      undefined,
-      report + signalText,
-      { parse_mode: 'MarkdownV2' }
-    );
   });
 
   // Ignore plain text (no unhandled-message noise)
   bot.on(message('text'), () => {});
+
+  // Global error handler — prevents any unhandled rejection from crashing the process
+  bot.catch((err, ctx) => {
+    console.error(`[bot] Unhandled error for update ${ctx.updateType}:`, err);
+  });
 
   return bot;
 }
