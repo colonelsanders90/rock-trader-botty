@@ -10,7 +10,7 @@ export function initScanner(tg: Telegram): void {
 }
 
 export async function runScan(): Promise<void> {
-  const subscribers = getSymbolSubscribers();
+  const subscribers = await getSymbolSubscribers();
   const symbols = Object.keys(subscribers);
 
   if (symbols.length === 0) {
@@ -24,7 +24,7 @@ export async function runScan(): Promise<void> {
     const analysis = await analyzeSymbol(symbol);
     if (!analysis) continue;
 
-    const signals = detectSignals(analysis);
+    const signals = await detectSignals(analysis);
 
     for (const signal of signals) {
       const msg = formatSignal(signal);
@@ -49,7 +49,7 @@ export async function runScan(): Promise<void> {
 }
 
 async function runVixCheck(): Promise<void> {
-  const subscribers = getVixSubscribers();
+  const subscribers = await getVixSubscribers();
   if (subscribers.length === 0) return;
 
   const signal = await checkVixAlert();

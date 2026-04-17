@@ -29,7 +29,7 @@ export function createBot(token: string): Telegraf {
 
   // ---- /start ----
   bot.command('start', async (ctx) => {
-    addVixSubscriber(String(ctx.chat.id));
+    await addVixSubscriber(String(ctx.chat.id));
     await ctx.replyWithMarkdownV2(
       `👋 *Welcome to Rock Trader Botty\\!*\n\n` +
       `I watch your stocks and fire alerts when:\n` +
@@ -162,7 +162,7 @@ export function createBot(token: string): Telegraf {
 
 async function handleWatch(ctx: any, symbol: string): Promise<void> {
   const chatId = String(ctx.chat.id);
-  const added = addToWatchlist(chatId, symbol);
+  const added = await addToWatchlist(chatId, symbol);
   if (!added) {
     await ctx.reply(`${symbol} is already on your watchlist.`, KB);
     return;
@@ -175,7 +175,7 @@ async function handleWatch(ctx: any, symbol: string): Promise<void> {
 
 async function handleUnwatch(ctx: any, symbol: string): Promise<void> {
   const chatId = String(ctx.chat.id);
-  const removed = removeFromWatchlist(chatId, symbol);
+  const removed = await removeFromWatchlist(chatId, symbol);
   if (!removed) {
     await ctx.reply(`${symbol} is not on your watchlist.`, KB);
     return;
@@ -185,7 +185,7 @@ async function handleUnwatch(ctx: any, symbol: string): Promise<void> {
 
 async function handleList(ctx: any): Promise<void> {
   const chatId = String(ctx.chat.id);
-  const watchlist = getWatchlist(chatId);
+  const watchlist = await getWatchlist(chatId);
   if (watchlist.length === 0) {
     await ctx.reply('Your watchlist is empty.\nTap ➕ Watch to add a symbol.', KB);
     return;
@@ -247,7 +247,7 @@ async function handleCheck(ctx: any, symbol: string): Promise<void> {
     }
 
     const report = formatAnalysisReport(analysis);
-    const signals = detectSignals_readonly(analysis);
+    const signals = await detectSignals_readonly(analysis);
     const signalText =
       signals.length > 0
         ? '\n\n' + signals.map(formatSignal).join('\n\n')
