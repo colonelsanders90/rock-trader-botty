@@ -1,7 +1,15 @@
 /**
- * Minimal Yahoo Finance v8 chart API client.
- * Fetches daily OHLCV candles for any symbol Yahoo Finance supports.
+ * Twelve Data API client — replaces Yahoo Finance.
+ *
+ * Why: Yahoo Finance blocks outbound requests from cloud provider IPs
+ * (Railway, Heroku, AWS, GCP, etc.) with ETIMEDOUT errors.
+ * Twelve Data works from any IP and has a generous free tier (800 req/day).
+ *
+ * Free tier: https://twelvedata.com/pricing
+ * Get a key:  https://twelvedata.com/register
  */
+
+const BASE_URL = 'https://api.twelvedata.com';
 
 export interface OHLCVBar {
   date: Date;
@@ -13,87 +21,82 @@ export interface OHLCVBar {
   volume: number;
 }
 
-interface YFChartResponse {
-  chart: {
-    result: Array<{
-      timestamp: number[];
-      indicators: {
-        quote: Array<{
-          open: (number | null)[];
-          high: (number | null)[];
-          low: (number | null)[];
-          close: (number | null)[];
-          volume: (number | null)[];
-        }>;
-        adjclose?: Array<{ adjclose: (number | null)[] }>;
-      };
-    }> | null;
-    error: { code: string; description: string } | null;
-  };
+interface TDTimeSeries {
+  status?: string;
+  code?: number;
+  message?: string;
+  values?: Array<{
+    datetime: string;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+    volume: string;
+  }>;
+}
+
+/**
+ * Convert Yahoo-Finance-style symbols to Twelve Data format.
+ *   BTC-USD  →  BTC/USD
+ *   ^VIX     →  VIX
+ *   ^GSPC    →  SPX
+ *   AAPL     →  AAPL   (no change)
+ */
+function toTwelveDataSymbol(symbol: string): string {
+  if (symbol.startsWith('^')) return symbol.slice(1).replace('GSPC', 'SPX');
+  if (symbol.includes('-')) return symbol.replace('-', '/');
+  return symbol;
 }
 
 export async function fetchDailyBars(
   symbol: string,
   lookbackDays: number
 ): Promise<OHLCVBar[]> {
-  const now = Math.floor(Date.now() / 1000);
-  const start = now - lookbackDays * 86400;
+  const apiKey = process.env.TWELVE_DATA_API_KEY;
+  if (!apiKey) throw new Error('TWELVE_DATA_API_KEY is not set in environment variables');
+
+  const tdSymbol = toTwelveDataSymbol(symbol);
+
+  // outputsize = trading days needed. ~252 trading days per year.
+  // lookbackDays is calendar days so multiply by 252/365 ≈ 0.69, add buffer.
+  const outputsize = Math.min(Math.ceil(lookbackDays * 0.75) + 20, 5000);
 
   const url =
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?period1=${start}&period2=${now}&interval=1d&includeAdjustedClose=true`;
+    `${BASE_URL}/time_series` +
+    `?symbol=${encodeURIComponent(tdSymbol)}` +
+    `&interval=1day` +
+    `&outputsize=${outputsize}` +
+    `&order=ASC` +
+    `&apikey=${apiKey}`;
 
   const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0',
-      Accept: 'application/json',
-    },
+    headers: { Accept: 'application/json' },
   });
 
   if (!res.ok) {
-    throw new Error(`Yahoo Finance HTTP ${res.status} for ${symbol}`);
+    throw new Error(`Twelve Data HTTP ${res.status} for ${symbol}`);
   }
 
-  const json = (await res.json()) as YFChartResponse;
+  const json = (await res.json()) as TDTimeSeries;
 
-  if (json.chart.error) {
-    throw new Error(
-      `Yahoo Finance error for ${symbol}: ${json.chart.error.description}`
-    );
+  if (json.status === 'error' || json.code != null) {
+    throw new Error(`Twelve Data error for ${symbol}: ${json.message ?? 'unknown'}`);
   }
 
-  const result = json.chart.result?.[0];
-  if (!result) throw new Error(`No data returned for ${symbol}`);
+  if (!json.values || json.values.length === 0) {
+    throw new Error(`No data returned by Twelve Data for ${symbol}`);
+  }
 
-  const timestamps = result.timestamp;
-  const q = result.indicators.quote[0];
-  const ac = result.indicators.adjclose?.[0]?.adjclose ?? [];
-
-  const bars: OHLCVBar[] = [];
-  for (let i = 0; i < timestamps.length; i++) {
-    const close = q.close[i];
-    const open = q.open[i];
-    const high = q.high[i];
-    const low = q.low[i];
-    const volume = q.volume[i];
-    const adjClose = ac[i] ?? close;
-
-    // Skip null/NaN rows (market holidays that sneak through)
-    if (
-      close == null || open == null || high == null ||
-      low == null || !isFinite(close)
-    ) continue;
-
-    bars.push({
-      date: new Date(timestamps[i] * 1000),
-      open,
-      high,
-      low,
+  return json.values.map((v) => {
+    const close = parseFloat(v.close);
+    return {
+      date: new Date(v.datetime),
+      open: parseFloat(v.open),
+      high: parseFloat(v.high),
+      low: parseFloat(v.low),
       close,
-      adjClose: adjClose ?? close,
-      volume: volume ?? 0,
-    });
-  }
-
-  return bars;
+      adjClose: close, // Twelve Data free tier doesn't split-adjust; close is fine for signals
+      volume: parseFloat(v.volume),
+    };
+  });
 }
