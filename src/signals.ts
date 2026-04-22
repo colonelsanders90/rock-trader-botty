@@ -74,9 +74,9 @@ export async function analyzeSymbol(
 // ---------------------------------------------------------------------------
 // Detect signals by comparing current analysis against stored state
 // ---------------------------------------------------------------------------
-export function detectSignals(analysis: AnalysisResult): TradingSignal[] {
+export async function detectSignals(analysis: AnalysisResult): Promise<TradingSignal[]> {
   const signals: TradingSignal[] = [];
-  const state = getSignalState(analysis.symbol);
+  const state = await getSignalState(analysis.symbol);
 
   // ---- MACD histogram zero-cross ----
   if (analysis.macd) {
@@ -103,7 +103,7 @@ export function detectSignals(analysis: AnalysisResult): TradingSignal[] {
       }
     }
 
-    updateSignalState(analysis.symbol, { lastMacdHistogram: curr });
+    await updateSignalState(analysis.symbol, { lastMacdHistogram: curr });
   }
 
   // ---- EMA200 proximity ----
@@ -126,7 +126,7 @@ export function detectSignals(analysis: AnalysisResult): TradingSignal[] {
             direction: pctDiff >= 0 ? 'ABOVE' : 'BELOW',
           },
         });
-        updateSignalState(analysis.symbol, { lastEma200AlertAt: now });
+        await updateSignalState(analysis.symbol, { lastEma200AlertAt: now });
       }
     }
   }
@@ -143,11 +143,11 @@ export async function checkVixAlert(): Promise<TradingSignal | null> {
     if (bars.length === 0) return null;
 
     const latest = bars[bars.length - 1];
-    const vixState = getVixState();
+    const vixState = await getVixState();
 
     if (vixState.lastAlertPrice === null) {
       // First run — seed the price, no alert yet
-      updateVixState({ lastAlertPrice: latest.close });
+      await updateVixState({ lastAlertPrice: latest.close });
       return null;
     }
 
@@ -156,7 +156,7 @@ export async function checkVixAlert(): Promise<TradingSignal | null> {
 
     if (Math.abs(changePercent) >= VIX_THRESHOLD) {
       const previousPrice = vixState.lastAlertPrice;
-      updateVixState({ lastAlertPrice: latest.close });
+      await updateVixState({ lastAlertPrice: latest.close });
       return {
         type: 'VIX_SPIKE',
         symbol: '^VIX',

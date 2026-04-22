@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
+import { createClient } from 'redis';
 import {
   AppState,
   SymbolSignalState,
@@ -8,6 +9,7 @@ import {
 } from './types.js';
 
 const STATE_FILE = path.resolve(process.cwd(), 'state.json');
+const REDIS_KEY = 'rtb:state';
 
 const DEFAULT_STATE: AppState = {
   watchlist: {},
@@ -16,52 +18,81 @@ const DEFAULT_STATE: AppState = {
   vixSubscribers: [],
 };
 
-function loadState(): AppState {
-  if (!existsSync(STATE_FILE)) {
-    return { ...DEFAULT_STATE };
+type RedisClient = ReturnType<typeof createClient>;
+let redisPromise: Promise<RedisClient> | null = null;
+
+function getRedis(): Promise<RedisClient> | null {
+  if (!process.env.REDIS_URL) return null;
+  if (!redisPromise) {
+    redisPromise = (async () => {
+      const client = createClient({ url: process.env.REDIS_URL });
+      client.on('error', (err) => console.error('[state] Redis error:', err));
+      await client.connect();
+      console.log('[state] Connected to Redis');
+      return client;
+    })();
   }
+  return redisPromise;
+}
+
+async function loadState(): Promise<AppState> {
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      const raw = await redis.get(REDIS_KEY);
+      if (!raw) return { ...DEFAULT_STATE };
+      return { ...DEFAULT_STATE, ...(JSON.parse(raw) as Partial<AppState>) };
+    } catch {
+      return { ...DEFAULT_STATE };
+    }
+  }
+  if (!existsSync(STATE_FILE)) return { ...DEFAULT_STATE };
   try {
-    const parsed = JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as Partial<AppState>;
-    return { ...DEFAULT_STATE, ...parsed };
+    return {
+      ...DEFAULT_STATE,
+      ...(JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as Partial<AppState>),
+    };
   } catch {
     return { ...DEFAULT_STATE };
   }
 }
 
-function saveState(state: AppState): void {
+async function saveState(state: AppState): Promise<void> {
+  const redis = await getRedis();
+  if (redis) {
+    await redis.set(REDIS_KEY, JSON.stringify(state));
+    return;
+  }
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
 }
 
 // --- Watchlist ---
 
-export function addToWatchlist(chatId: string, symbol: string): boolean {
-  const state = loadState();
+export async function addToWatchlist(chatId: string, symbol: string): Promise<boolean> {
+  const state = await loadState();
   if (!state.watchlist[chatId]) state.watchlist[chatId] = [];
   if (state.watchlist[chatId].some((s) => s.symbol === symbol)) return false;
   state.watchlist[chatId].push({ symbol, addedAt: new Date().toISOString() });
-  saveState(state);
+  await saveState(state);
   return true;
 }
 
-export function removeFromWatchlist(chatId: string, symbol: string): boolean {
-  const state = loadState();
+export async function removeFromWatchlist(chatId: string, symbol: string): Promise<boolean> {
+  const state = await loadState();
   if (!state.watchlist[chatId]) return false;
   const before = state.watchlist[chatId].length;
-  state.watchlist[chatId] = state.watchlist[chatId].filter(
-    (s) => s.symbol !== symbol
-  );
+  state.watchlist[chatId] = state.watchlist[chatId].filter((s) => s.symbol !== symbol);
   if (state.watchlist[chatId].length === before) return false;
-  saveState(state);
+  await saveState(state);
   return true;
 }
 
-export function getWatchlist(chatId: string): WatchedSymbol[] {
-  return loadState().watchlist[chatId] ?? [];
+export async function getWatchlist(chatId: string): Promise<WatchedSymbol[]> {
+  return (await loadState()).watchlist[chatId] ?? [];
 }
 
-/** Returns a map of symbol -> chatIds that subscribe to it */
-export function getSymbolSubscribers(): Record<string, string[]> {
-  const { watchlist } = loadState();
+export async function getSymbolSubscribers(): Promise<Record<string, string[]>> {
+  const { watchlist } = await loadState();
   const result: Record<string, string[]> = {};
   for (const [chatId, symbols] of Object.entries(watchlist)) {
     for (const { symbol } of symbols) {
@@ -74,20 +105,20 @@ export function getSymbolSubscribers(): Record<string, string[]> {
 
 // --- Signal state ---
 
-export function getSignalState(symbol: string): SymbolSignalState {
+export async function getSignalState(symbol: string): Promise<SymbolSignalState> {
   return (
-    loadState().signalState[symbol] ?? {
+    (await loadState()).signalState[symbol] ?? {
       lastMacdHistogram: null,
       lastEma200AlertAt: null,
     }
   );
 }
 
-export function updateSignalState(
+export async function updateSignalState(
   symbol: string,
   updates: Partial<SymbolSignalState>
-): void {
-  const state = loadState();
+): Promise<void> {
+  const state = await loadState();
   state.signalState[symbol] = {
     ...(state.signalState[symbol] ?? {
       lastMacdHistogram: null,
@@ -95,31 +126,31 @@ export function updateSignalState(
     }),
     ...updates,
   };
-  saveState(state);
+  await saveState(state);
 }
 
 // --- VIX state ---
 
-export function getVixState(): VixState {
-  return loadState().vixState;
+export async function getVixState(): Promise<VixState> {
+  return (await loadState()).vixState;
 }
 
-export function updateVixState(updates: Partial<VixState>): void {
-  const state = loadState();
+export async function updateVixState(updates: Partial<VixState>): Promise<void> {
+  const state = await loadState();
   state.vixState = { ...state.vixState, ...updates };
-  saveState(state);
+  await saveState(state);
 }
 
 // --- VIX subscribers ---
 
-export function addVixSubscriber(chatId: string): void {
-  const state = loadState();
+export async function addVixSubscriber(chatId: string): Promise<void> {
+  const state = await loadState();
   if (!state.vixSubscribers.includes(chatId)) {
     state.vixSubscribers.push(chatId);
-    saveState(state);
+    await saveState(state);
   }
 }
 
-export function getVixSubscribers(): string[] {
-  return loadState().vixSubscribers;
+export async function getVixSubscribers(): Promise<string[]> {
+  return (await loadState()).vixSubscribers;
 }

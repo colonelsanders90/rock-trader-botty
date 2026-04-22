@@ -1,6 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { addToWatchlist, addVixSubscriber, getWatchlist, removeFromWatchlist } from './state.js';
+import { isRateLimited, isValidSymbol, LIMITS, MAX_WATCHLIST_SIZE } from './ratelimit.js';
 import {
   analyzeSymbol,
   detectSignals,
@@ -29,7 +30,7 @@ export function createBot(token: string): Telegraf {
 
   // ---- /start ----
   bot.command('start', async (ctx) => {
-    addVixSubscriber(String(ctx.chat.id));
+    await addVixSubscriber(String(ctx.chat.id));
     await ctx.replyWithMarkdownV2(
       `👋 *Welcome to Rock Trader Botty\\!*\n\n` +
       `I watch your stocks and fire alerts when:\n` +
@@ -160,9 +161,47 @@ export function createBot(token: string): Telegraf {
 // Action helpers (shared by slash commands and button flows)
 // ---------------------------------------------------------------------------
 
-async function handleWatch(ctx: any, symbol: string): Promise<void> {
+/** Returns true and replies if the user is over any rate limit. */
+async function checkLimits(
+  ctx: any,
+  action: 'api' | 'watchlist'
+): Promise<boolean> {
   const chatId = String(ctx.chat.id);
-  const added = addToWatchlist(chatId, symbol);
+  if (isRateLimited(`${chatId}:global`, LIMITS.global.max, LIMITS.global.windowMs)) {
+    await ctx.reply('Too many requests. Please slow down.', KB);
+    return true;
+  }
+  const limit = LIMITS[action];
+  if (isRateLimited(`${chatId}:${action}`, limit.max, limit.windowMs)) {
+    const cooldownSec = Math.ceil(limit.windowMs / 1000);
+    await ctx.reply(`Too many requests. Please wait ${cooldownSec}s before trying again.`, KB);
+    return true;
+  }
+  return false;
+}
+
+/** Returns true and replies if the symbol fails validation. */
+async function checkSymbol(ctx: any, symbol: string): Promise<boolean> {
+  if (!isValidSymbol(symbol)) {
+    await ctx.reply(
+      `❌ "${symbol}" doesn't look like a valid ticker symbol.\nUse letters and numbers only (e.g. AAPL, ^VIX, BRK.B).`,
+      KB
+    );
+    return true;
+  }
+  return false;
+}
+
+async function handleWatch(ctx: any, symbol: string): Promise<void> {
+  if (await checkSymbol(ctx, symbol)) return;
+  if (await checkLimits(ctx, 'watchlist')) return;
+  const chatId = String(ctx.chat.id);
+  const current = await getWatchlist(chatId);
+  if (current.length >= MAX_WATCHLIST_SIZE) {
+    await ctx.reply(`Your watchlist is full (${MAX_WATCHLIST_SIZE} symbols max). Remove one first.`, KB);
+    return;
+  }
+  const added = await addToWatchlist(chatId, symbol);
   if (!added) {
     await ctx.reply(`${symbol} is already on your watchlist.`, KB);
     return;
@@ -174,8 +213,10 @@ async function handleWatch(ctx: any, symbol: string): Promise<void> {
 }
 
 async function handleUnwatch(ctx: any, symbol: string): Promise<void> {
+  if (await checkSymbol(ctx, symbol)) return;
+  if (await checkLimits(ctx, 'watchlist')) return;
   const chatId = String(ctx.chat.id);
-  const removed = removeFromWatchlist(chatId, symbol);
+  const removed = await removeFromWatchlist(chatId, symbol);
   if (!removed) {
     await ctx.reply(`${symbol} is not on your watchlist.`, KB);
     return;
@@ -185,7 +226,7 @@ async function handleUnwatch(ctx: any, symbol: string): Promise<void> {
 
 async function handleList(ctx: any): Promise<void> {
   const chatId = String(ctx.chat.id);
-  const watchlist = getWatchlist(chatId);
+  const watchlist = await getWatchlist(chatId);
   if (watchlist.length === 0) {
     await ctx.reply('Your watchlist is empty.\nTap ➕ Watch to add a symbol.', KB);
     return;
@@ -200,6 +241,8 @@ async function handleList(ctx: any): Promise<void> {
 }
 
 async function handlePrice(ctx: any, symbol: string): Promise<void> {
+  if (await checkSymbol(ctx, symbol)) return;
+  if (await checkLimits(ctx, 'api')) return;
   const loadingMsg = await ctx.reply(`🔍 Fetching price for ${symbol}…`);
   try {
     const bars = await fetchDailyBars(symbol, 5);
@@ -233,6 +276,8 @@ async function handlePrice(ctx: any, symbol: string): Promise<void> {
 }
 
 async function handleCheck(ctx: any, symbol: string): Promise<void> {
+  if (await checkSymbol(ctx, symbol)) return;
+  if (await checkLimits(ctx, 'api')) return;
   const loadingMsg = await ctx.reply(`🔍 Fetching data for ${symbol}…`);
   try {
     const analysis = await analyzeSymbol(symbol);
@@ -247,7 +292,7 @@ async function handleCheck(ctx: any, symbol: string): Promise<void> {
     }
 
     const report = formatAnalysisReport(analysis);
-    const signals = detectSignals_readonly(analysis);
+    const signals = await detectSignals_readonly(analysis);
     const signalText =
       signals.length > 0
         ? '\n\n' + signals.map(formatSignal).join('\n\n')
