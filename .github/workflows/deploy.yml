@@ -1,4 +1,4 @@
-name: Deploy to Heroku
+name: Deploy to Railway
 
 on:
   push:
@@ -9,12 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Deploy to Heroku
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy
+        run: railway up --service ${{ secrets.RAILWAY_SERVICE_NAME }}
         env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: |
-          git remote add heroku https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_APP_NAME }}.git
-          git push heroku main --force
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
